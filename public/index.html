@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>马厂老火锅 - 多人在线点菜</title>
+
+<!-- Socket.IO Client -->
+<script src="/socket.io/socket.io.js"></script>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #FFD54F 0%, #FFB300 100%);
+    padding: 16px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #333;
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: #666;
+    margin-top: 2px;
+  }
+  .header .user-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.85);
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 8px;
+    color: #E65100;
+  }
+  .header .back-btn {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #333;
+    display: none;
+  }
+  .header .room-info {
+    display: inline-block;
+    background: rgba(255,255,255,0.6);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #666;
+    margin-left: 8px;
+  }
+  .header .online-info {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(76,175,80,0.15);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #2E7D32;
+    margin-left: 6px;
+  }
+  .header .online-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #4CAF50;
+    border-radius: 50%;
+    margin-right: 4px;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Screens */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* User Selection */
+  .user-select {
+    padding: 40px 20px;
+    text-align: center;
+  }
+  .user-select h2 {
+    font-size: 24px;
+    margin-bottom: 8px;
+    color: #333;
+  }
+  .user-select p {
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .user-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  .summary-entry-btn {
+    display: block;
+    margin: 28px auto 0;
+    padding: 12px 32px;
+    background: linear-gradient(135deg, #FFD54F 0%, #FFB300 100%);
+    color: #333;
+    border: none;
+    border-radius: 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255,179,0,0.3);
+    transition: all 0.2s;
+  }
+  .summary-entry-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255,179,0,0.4);
+  }
+  .summary-entry-btn:active {
+    transform: scale(0.97);
+  }
+  .user-card {
+    background: white;
+    border-radius: 16px;
+    padding: 24px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    position: relative;
+  }
+  .user-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+  .user-card:active {
+    transform: scale(0.96);
+  }
+  .user-card .online-indicator {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 10px;
+    height: 10px;
+    background: #4CAF50;
+    border-radius: 50%;
+    border: 2px solid white;
+  }
+  .avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 700;
+    color: white;
+  }
+  .name {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .status {
+    font-size: 12px;
+    color: #999;
+  }
+  .status.ordered {
+    color: #4CAF50;
+    font-weight: 500;
+  }
+
+  /* Menu Layout */
+  .menu-layout {
+    display: flex;
+    height: calc(100vh - 120px);
+  }
+  .category-nav {
+    width: 90px;
+    background: white;
+    overflow-y: auto;
+    border-right: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .cat-item {
+    padding: 14px 8px;
+    font-size: 13px;
+    text-align: center;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  .cat-item.active {
+    background: #FFF8E1;
+    border-left-color: #FFB300;
+    color: #E65100;
+    font-weight: 600;
+  }
+  .menu-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px 100px;
+  }
+  .cat-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 16px 4px 8px;
+    color: #333;
+  }
+  .dish-card {
+    display: flex;
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .dish-img {
+    width: 64px;
+    height: 64px;
+    background: #FFF8E1;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    flex-shrink: 0;
+    margin-right: 12px;
+  }
+  .dish-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .dish-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .dish-name .star {
+    color: #FFB300;
+    margin-right: 4px;
+  }
+  .dish-recommend {
+    font-size: 11px;
+    color: #FF6B35;
+    margin-bottom: 4px;
+  }
+  .dish-desc {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .dish-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dish-price {
+    font-size: 16px;
+    font-weight: 700;
+    color: #E65100;
+  }
+  .dish-price span {
+    font-size: 12px;
+    font-weight: 400;
+    color: #999;
+  }
+  .dish-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .qty-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .qty-btn.plus {
+    background: #FFB300;
+    color: white;
+  }
+  .qty-btn.minus {
+    background: #fff;
+    color: #E65100;
+    border: 1.5px solid #E65100;
+  }
+  .qty-btn:active {
+    transform: scale(0.9);
+  }
+  .qty-num {
+    font-size: 15px;
+    font-weight: 600;
+    min-width: 20px;
+    text-align: center;
+  }
+
+  /* Cart Bar */
+  .cart-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    padding: 12px 16px;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 99;
+  }
+  .cart-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .cart-icon {
+    font-size: 28px;
+    position: relative;
+  }
+  .cart-badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    background: #E65100;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+  }
+  .cart-total {
+    font-size: 20px;
+    font-weight: 700;
+    color: #E65100;
+  }
+  .cart-total span:first-child {
+    font-size: 14px;
+  }
+  .cart-btn, .summary-btn {
+    padding: 10px 20px;
+    border-radius: 22px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .cart-btn {
+    background: linear-gradient(135deg, #FFD54F 0%, #FFB300 100%);
+    color: #333;
+  }
+  .cart-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .summary-btn {
+    background: #fff;
+    color: #E65100;
+    border: 1.5px solid #E65100;
+  }
+  .switch-user-btn {
+    position: fixed;
+    bottom: 70px;
+    right: 16px;
+    background: white;
+    border: 1.5px solid #ddd;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 98;
+  }
+
+  /* Summary */
+  .summary-screen {
+    padding: 16px;
+    padding-bottom: 40px;
+  }
+  .summary-tabs {
+    display: flex;
+    background: white;
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .summary-tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .summary-tab.active {
+    background: #FFB300;
+    color: white;
+  }
+  .summary-section {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .summary-section h3 {
+    font-size: 15px;
+    margin-bottom: 12px;
+    color: #333;
+  }
+  .person-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .avatar-sm {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: white;
+  }
+  .person-dish {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 14px;
+  }
+  .pd-name {
+    flex: 1;
+  }
+  .pd-qty {
+    color: #E65100;
+    font-weight: 600;
+    margin: 0 12px;
+  }
+  .summary-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f5f5f5;
+  }
+  .summary-row:last-child {
+    border-bottom: none;
+  }
+  .dish-name-sm {
+    flex: 1;
+    font-size: 14px;
+  }
+  .dish-qty {
+    font-size: 14px;
+    font-weight: 600;
+    color: #E65100;
+    margin: 0 12px;
+  }
+  .dish-price-sm {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    min-width: 50px;
+    text-align: right;
+  }
+  .adjust-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 12px;
+  }
+  .adj-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1.5px solid #FFB300;
+    background: white;
+    color: #E65100;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .adj-num {
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 20px;
+    text-align: center;
+  }
+  .total-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0 0;
+    margin-top: 8px;
+    border-top: 2px solid #FFB300;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .total-price {
+    font-size: 18px;
+    color: #E65100;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+  }
+  .empty-state .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+
+  /* Toast */
+  .toast {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 1000;
+  }
+
+  /* Loading */
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #FFB300;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .loading-text {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #666;
+  }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    .category-nav { width: 76px; }
+    .cat-item { font-size: 12px; padding: 12px 4px; }
+    .dish-img { width: 56px; height: 56px; font-size: 28px; }
+    .dish-name { font-size: 14px; }
+    .dish-price { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">正在连接...</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ========== Screen 1: User Selection ========== -->
+<div class="screen active" id="screen-user">
+  <div class="header">
+    <h1>马厂老火锅</h1>
+    <div class="subtitle">真如店 · 多人在线点菜 <span class="room-info" id="roomInfo"></span><span class="online-info" id="onlineInfo" style="display:none"><span class="online-dot"></span><span id="onlineCount">0</span>人在线</span></div>
+  </div>
+  <div class="user-select">
+    <h2>选择你的身份</h2>
+    <p>选好后开始点菜，所有人的选择会实时同步</p>
+    <div class="user-grid" id="userGrid"></div>
+    <button class="summary-entry-btn" onclick="showScreen('summary')">📋 查看汇总</button>
+  </div>
+</div>
+
+<!-- ========== Screen 2: Menu ========== -->
+<div class="screen" id="screen-menu">
+  <div class="header">
+    <button class="back-btn" id="backBtn" onclick="showScreen('user')">&#8249;</button>
+    <h1>马厂老火锅</h1>
+    <div class="subtitle" id="menuSubtitle">点菜中...</div>
+    <div class="user-badge" id="currentUserBadge"></div>
+  </div>
+  <div class="menu-layout">
+    <div class="category-nav" id="categoryNav"></div>
+    <div class="menu-content" id="menuContent"></div>
+  </div>
+  <div class="cart-bar" id="cartBar">
+    <div class="cart-info">
+      <div class="cart-icon">
+        🛒
+        <div class="cart-badge" id="cartBadge" style="display:none">0</div>
+      </div>
+      <div class="cart-total"><span>¥</span><span id="cartTotal">0</span></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="summary-btn" onclick="showScreen('summary')">查看汇总</button>
+      <button class="cart-btn" id="submitBtn" onclick="submitOrder()">提交订单</button>
+    </div>
+  </div>
+  <button class="switch-user-btn" onclick="showScreen('user')">切换用户</button>
+</div>
+
+<!-- ========== Screen 3: Summary ========== -->
+<div class="screen" id="screen-summary">
+  <div class="header">
+    <button class="back-btn" style="display:block" onclick="goBackFromSummary()">&#8249;</button>
+    <h1>点菜汇总</h1>
+    <div class="subtitle" id="summarySubtitle">所有人点菜情况</div>
+  </div>
+  <div class="summary-screen" id="summaryContent"></div>
+</div>
+
+<script>
+// ==================== SOCKET.IO CONNECTION ====================
+const socket = io();
+
+// ==================== ROOM MANAGEMENT ====================
+function getRoomId() {
+  let roomId = window.location.hash.slice(1);
+  if (!roomId) {
+    roomId = 'room_' + Math.random().toString(36).substr(2, 9);
+    window.location.hash = roomId;
+  }
+  return roomId;
+}
+
+const ROOM_ID = getRoomId();
+
+// Connect to room
+socket.emit('join-room', ROOM_ID);
+
+// Receive room state on join
+socket.on('room-state', (data) => {
+  orders = data.orders || {};
+  finalMenu = data.finalMenu || {};
+  USERS.forEach(u => {
+    if (!orders[u.id]) orders[u.id] = {};
+  });
+  refreshCurrentScreen();
+  document.getElementById('loadingOverlay').style.display = 'none';
+});
+
+// Receive real-time order updates
+socket.on('orders-updated', (data) => {
+  if (data.userId) {
+    orders[data.userId] = data.orders || {};
+  }
+  refreshCurrentScreen();
+});
+
+// Receive real-time final menu updates
+socket.on('final-menu-updated', (data) => {
+  finalMenu = data.finalMenu || {};
+  const activeScreen = document.querySelector('.screen.active');
+  if (activeScreen.id === 'screen-summary') renderSummary();
+});
+
+// Online count updates
+socket.on('user-count', (count) => {
+  const el = document.getElementById('onlineInfo');
+  const countEl = document.getElementById('onlineCount');
+  if (count > 0) {
+    el.style.display = 'inline-flex';
+    countEl.textContent = count;
+  } else {
+    el.style.display = 'none';
+  }
+});
+
+function refreshCurrentScreen() {
+  const activeScreen = document.querySelector('.screen.active');
+  if (activeScreen.id === 'screen-user') renderUserGrid();
+  else if (activeScreen.id === 'screen-menu') {
+    renderMenu();
+    updateCartBar();
+  }
+  else if (activeScreen.id === 'screen-summary') renderSummary();
+}
+
+// ==================== DATA ====================
+const USERS = [
+  { id: 1, name: '顺子', color: '#4CAF50' },
+  { id: 2, name: '老曹', color: '#2196F3' },
+  { id: 3, name: 'hhh', color: '#FF9800' },
+  { id: 4, name: '凤凰', color: '#E91E63' },
+];
+
+const CATEGORIES = ['锅底必点', '招牌菜', '推荐菜', '当季新品', '荤菜', '素菜', '主食小吃', '酒水饮料'];
+
+const MENU = [
+  // 锅底必点
+  { id: 1, cat: '锅底必点', name: '马厂全红锅', price: 48, unit: '口', desc: '马厂只做全红锅，专注探索重庆味儿', emoji: '🍲' },
+  { id: 2, cat: '锅底必点', name: '自助小料', price: 3, unit: '份', desc: '老火锅只吃香油碟，解馋、解辣又护胃', emoji: '🥣' },
+
+  // 招牌菜
+  { id: 3, cat: '招牌菜', name: '冷锅鸭血', price: 14, unit: '份', desc: '一个字：嫩', recommend: 44, star: true, emoji: '🩸' },
+  { id: 4, cat: '招牌菜', name: '手切吊龙', price: 38, unit: '份', desc: '上桌先吃它，拿一个大漏网，10档火，一盘分两次，涮15秒，淡粉色最嫩', recommend: 46, star: true, emoji: '🥩' },
+  { id: 5, cat: '招牌菜', name: '嫩牛肉', price: 36, unit: '份', desc: '嫩｜鲜', recommend: 21, star: true, emoji: '' },
+  { id: 6, cat: '招牌菜', name: '屠宰鲜毛肚', price: 38, unit: '份', desc: '当日鲜宰｜人工精洗去杂｜原始风味｜七上八下', recommend: 13, star: true, emoji: '', suffix: '（每日手撕）' },
+  { id: 7, cat: '招牌菜', name: '九尺鲜鹅肠', price: 28, unit: '份', desc: '"九尺"是地名，涮15秒。脆。', recommend: 1, emoji: '🦆' },
+  { id: 8, cat: '招牌菜', name: '耙糯糯鸡爪', price: 28, unit: '份', desc: '口感软烂，胶质十足。', recommend: 15, star: true, emoji: '🐔' },
+  { id: 9, cat: '招牌菜', name: '现宰牛蛙', price: 22, unit: '份', desc: '每份一只，超级新鲜，上桌还在跳哦~', recommend: 3, star: true, emoji: '' },
+  { id: 10, cat: '招牌菜', name: '胸口油', price: 32, unit: '份', desc: '胸口油不是油是筋膜（奶香味十足，好吃）', recommend: 3, emoji: '🥓' },
+  { id: 11, cat: '招牌菜', name: '千丝黄喉', price: 32, unit: '份', desc: '手工改刀｜脆嫩弹牙', recommend: 8, emoji: '🍜' },
+  { id: 12, cat: '招牌菜', name: '石磨黑豆花', price: 28, unit: '份', desc: '手工非遗黑豆花，比肉好吃人人夸。', recommend: 1, star: true, emoji: '🫘' },
+
+  // 推荐菜
+  { id: 13, cat: '推荐菜', name: '鳝片', price: 36, unit: '份', desc: '', emoji: '' },
+  { id: 14, cat: '推荐菜', name: '耗儿鱼', price: 32, unit: '份', desc: '', recommend: 3, emoji: '🐟' },
+  { id: 15, cat: '推荐菜', name: '功夫腰片', price: 32, unit: '份', desc: '功夫腰片｜刀工精湛｜片大脆嫩｜15秒即可', emoji: '🥩' },
+  { id: 16, cat: '推荐菜', name: '火箭鱿鱼', price: 26, unit: '份', desc: '', emoji: '🦑' },
+  { id: 17, cat: '推荐菜', name: '霸王毛肚', price: 32, unit: '份', desc: '要"脆"就选它', emoji: '🫧' },
+  { id: 18, cat: '推荐菜', name: '鲜卤肥肠', price: 28, unit: '份', desc: '软糯有嚼劲', emoji: '' },
+  { id: 19, cat: '推荐菜', name: '蟹籽虾滑', price: 38, unit: '份', desc: '', recommend: 2, star: true, emoji: '🦐' },
+  { id: 20, cat: '推荐菜', name: '手打香菜肉丸', price: 20, unit: '份', desc: '每日手打，主打一个"鲜"', emoji: '' },
+  { id: 21, cat: '推荐菜', name: '五香耙牛肉', price: 32, unit: '份', desc: '', emoji: '🥩' },
+  { id: 22, cat: '推荐菜', name: '干蒸千层肚', price: 32, unit: '份', desc: '', recommend: 1, emoji: '🫧' },
+  { id: 23, cat: '推荐菜', name: '辣卤牛蹄', price: 32, unit: '份', desc: '', emoji: '🦶' },
+  { id: 24, cat: '推荐菜', name: '黄金六两松板肉', price: 28, unit: '份', desc: '一头猪猪身上只有六两', recommend: 3, emoji: '🥓' },
+  { id: 25, cat: '推荐菜', name: '鲜黄喉', price: 28, unit: '份', desc: '', star: true, emoji: '🍜' },
+  { id: 26, cat: '推荐菜', name: '脆骨腊肠', price: 22, unit: '份', desc: '', recommend: 1, emoji: '' },
+  { id: 27, cat: '推荐菜', name: '麻辣鸡翅尖', price: 16, unit: '份', desc: '', emoji: '🍗' },
+  { id: 28, cat: '推荐菜', name: '板栗南瓜', price: 12, unit: '份', desc: '试一下，煮5分钟，打开新世界的大门。', recommend: 3, emoji: '🎃' },
+
+  // 当季新品
+  { id: 29, cat: '当季新品', name: '海白菜', price: 10, unit: '份', desc: '清热解毒｜抗氧化｜减脂', emoji: '🥬' },
+  { id: 30, cat: '当季新品', name: '香豆腐', price: 14, unit: '份', desc: '煮在锅里', emoji: '🧈' },
+  { id: 31, cat: '当季新品', name: '鲜脑花', price: 20, unit: '份', desc: '', recommend: 2, emoji: '🧠' },
+  { id: 32, cat: '当季新品', name: '潮汕手打牛肉丸', price: 22, unit: '份', desc: '', recommend: 8, emoji: '' },
+  { id: 33, cat: '当季新品', name: '特制小香肠', price: 18, unit: '份', desc: '', recommend: 3, emoji: '🌭' },
+
+  // 荤菜
+  { id: 34, cat: '荤菜', name: '小白猪午餐肉', price: 20, unit: '份', desc: '', emoji: '🥓' },
+  { id: 35, cat: '荤菜', name: '麻辣牛肉', price: 32, unit: '份', desc: '', recommend: 1, emoji: '' },
+  { id: 36, cat: '荤菜', name: '美好火腿肠', price: 16, unit: '份', desc: '', emoji: '🌭' },
+  { id: 37, cat: '荤菜', name: '去骨鸭掌', price: 22, unit: '份', desc: '', emoji: '🦆' },
+  { id: 38, cat: '荤菜', name: '白鹌鹑蛋', price: 16, unit: '份', desc: '', emoji: '🥚' },
+  { id: 39, cat: '荤菜', name: '现片黑鱼', price: 26, unit: '份', desc: '', emoji: '' },
+  { id: 40, cat: '荤菜', name: '双椒牛肉', price: 32, unit: '份', desc: '', emoji: '🥩' },
+  { id: 41, cat: '荤菜', name: '巴山腊肉', price: 22, unit: '份', desc: '', emoji: '🥓' },
+  { id: 42, cat: '荤菜', name: '蟹柳花', price: 22, unit: '份', desc: '', emoji: '' },
+  { id: 43, cat: '荤菜', name: '黄金蛋饺', price: 14, unit: '份', desc: '', emoji: '🥟' },
+  { id: 44, cat: '荤菜', name: '菊花鸭肫', price: 22, unit: '份', desc: '', emoji: '🫀' },
+  { id: 45, cat: '荤菜', name: '藤椒牛舌', price: 22, unit: '份', desc: '', emoji: '👅' },
+  { id: 46, cat: '荤菜', name: '鲜鸭舌', price: 36, unit: '份', desc: '', emoji: '' },
+  { id: 47, cat: '荤菜', name: '爆汁牛肉丸', price: 18, unit: '份', desc: '', emoji: '🧆' },
+  { id: 48, cat: '荤菜', name: '海霸王虾饺', price: 16, unit: '份', desc: '', emoji: '🥟' },
+
+  // 素菜
+  { id: 49, cat: '素菜', name: '牛皮豆干', price: 12, unit: '份', desc: '', emoji: '🫘' },
+  { id: 50, cat: '素菜', name: '咯吱响贡菜', price: 16, unit: '份', desc: '', star: true, emoji: '🥬' },
+  { id: 51, cat: '素菜', name: '盘丝土豆', price: 6, unit: '份', desc: '', recommend: 14, star: true, emoji: '🥔' },
+  { id: 52, cat: '素菜', name: '腐竹', price: 8, unit: '份', desc: '', emoji: '🫘' },
+  { id: 53, cat: '素菜', name: '干菜花', price: 10, unit: '份', desc: '', emoji: '🥦' },
+  { id: 54, cat: '素菜', name: '黄豆皮', price: 10, unit: '份', desc: '', emoji: '🫘' },
+  { id: 55, cat: '素菜', name: '小木耳', price: 6, unit: '份', desc: '', emoji: '🍄' },
+  { id: 56, cat: '素菜', name: '冬瓜', price: 8, unit: '份', desc: '', emoji: '' },
+  { id: 57, cat: '素菜', name: '莴笋', price: 10, unit: '份', desc: '', recommend: 1, emoji: '🥬' },
+  { id: 58, cat: '素菜', name: '鲜藕片', price: 10, unit: '份', desc: '', recommend: 1, emoji: '🪷' },
+  { id: 59, cat: '素菜', name: '苕粉', price: 12, unit: '份', desc: '', recommend: 1, emoji: '🍜' },
+  { id: 60, cat: '素菜', name: '金针菇', price: 12, unit: '份', desc: '', emoji: '🍄' },
+  { id: 61, cat: '素菜', name: '平菇', price: 10, unit: '份', desc: '', emoji: '🍄' },
+  { id: 62, cat: '素菜', name: '小豆芽', price: 3, unit: '份', desc: '', emoji: '🌱' },
+  { id: 63, cat: '素菜', name: '香菇', price: 9, unit: '份', desc: '', emoji: '🍄' },
+  { id: 64, cat: '素菜', name: '鲜竹笋', price: 16, unit: '份', desc: '', emoji: '🎋' },
+  { id: 65, cat: '素菜', name: '小黄瓜', price: 10, unit: '份', desc: '', emoji: '🥒' },
+  { id: 66, cat: '素菜', name: '娃娃菜', price: 10, unit: '份', desc: '', emoji: '🥬' },
+  { id: 67, cat: '素菜', name: '菌菇拼盘', price: 22, unit: '份', desc: '', emoji: '🍄' },
+  { id: 68, cat: '素菜', name: '海带苗', price: 9, unit: '份', desc: '', recommend: 2, emoji: '🌿' },
+  { id: 69, cat: '素菜', name: '西红柿', price: 8, unit: '份', desc: '', emoji: '🍅' },
+  { id: 70, cat: '素菜', name: '包浆豆腐', price: 16, unit: '份', desc: '', emoji: '🧈' },
+  { id: 71, cat: '素菜', name: '生菜', price: 6, unit: '份', desc: '生吃解腻。煮在锅里超级辣，慎重选择。', emoji: '🥬' },
+
+  // 主食小吃
+  { id: 72, cat: '主食小吃', name: '扬州炒饭', price: 5, unit: '份', desc: '', recommend: 2, emoji: '🍚' },
+  { id: 73, cat: '主食小吃', name: '现炸酥肉', price: 22, unit: '份起', desc: '', recommend: 2, emoji: '🍖' },
+  { id: 74, cat: '主食小吃', name: '红糖冰粉', price: 8, unit: '份', desc: '', recommend: 1, emoji: '🍨' },
+  { id: 75, cat: '主食小吃', name: '杨梅冰汤圆', price: 9, unit: '份', desc: '', recommend: 1, emoji: '🍡' },
+  { id: 76, cat: '主食小吃', name: '冰汤圆', price: 8, unit: '份', desc: '', emoji: '' },
+  { id: 77, cat: '主食小吃', name: '南瓜饼', price: 12, unit: '份', desc: '', emoji: '🥮' },
+  { id: 78, cat: '主食小吃', name: '红糖糍', price: 16, unit: '份', desc: '', recommend: 1, emoji: '🍡' },
+  { id: 79, cat: '主食小吃', name: '大宽刀削面', price: 6, unit: '份', desc: '', emoji: '🍜' },
+  { id: 80, cat: '主食小吃', name: '椒盐花生', price: 10, unit: '份', desc: '', emoji: '🥜' },
+  { id: 81, cat: '主食小吃', name: '炸香豆腐', price: 14, unit: '份起', desc: '', emoji: '🧈' },
+
+  // 酒水饮料
+  { id: 82, cat: '酒水饮料', name: '娃哈哈纯净水', price: 3, unit: '瓶', desc: '', emoji: '💧' },
+];
+
+// ==================== STATE ====================
+let currentUser = null;
+let orders = {}; // { userId: { dishId: qty } }
+let finalMenu = {}; // { dishId: qty }
+let previousScreen = 'menu';
+
+// Initialize orders
+USERS.forEach(u => { orders[u.id] = {}; });
+
+// ==================== RENDER: User Selection ====================
+function renderUserGrid() {
+  const grid = document.getElementById('userGrid');
+  grid.innerHTML = USERS.map(u => {
+    const orderCount = Object.values(orders[u.id] || {}).reduce((s, q) => s + q, 0);
+    const hasOrdered = orderCount > 0;
+    return `
+      <div class="user-card" onclick="selectUser(${u.id})">
+        <div class="avatar" style="background:${u.color}">${u.name[0]}</div>
+        <div class="name">${u.name}</div>
+        <div class="status ${hasOrdered ? 'ordered' : ''}">${hasOrdered ? '已点 ' + orderCount + ' 样' : '未点菜'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectUser(userId) {
+  currentUser = USERS.find(u => u.id === userId);
+  socket.emit('select-user', userId);
+  document.getElementById('currentUserBadge').textContent = currentUser.name + ' 点菜中';
+  document.getElementById('menuSubtitle').textContent = currentUser.name + ' 正在点菜';
+  renderMenu();
+  updateCartBar();
+  showScreen('menu');
+}
+
+// ==================== RENDER: Menu ====================
+function renderMenu() {
+  const nav = document.getElementById('categoryNav');
+  nav.innerHTML = CATEGORIES.map((cat, i) =>
+    `<div class="cat-item ${i === 0 ? 'active' : ''}" data-cat="${cat}" onclick="scrollToCat('${cat}')">${cat}</div>`
+  ).join('');
+
+  const content = document.getElementById('menuContent');
+  content.innerHTML = CATEGORIES.map(cat => {
+    const dishes = MENU.filter(d => d.cat === cat);
+    return `
+      <div class="cat-section" id="cat-${cat}">
+        <div class="cat-section-title">${cat}</div>
+        ${dishes.map(d => renderDishCard(d)).join('')}
+      </div>
+    `;
+  }).join('');
+
+  content.onscroll = () => {
+    const sections = content.querySelectorAll('.cat-section');
+    let current = CATEGORIES[0];
+    sections.forEach(s => {
+      if (s.offsetTop - content.offsetTop <= content.scrollTop + 60) {
+        current = s.id.replace('cat-', '');
+      }
+    });
+    nav.querySelectorAll('.cat-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.cat === current);
+    });
+  };
+}
+
+function renderDishCard(dish) {
+  const qty = currentUser ? (orders[currentUser.id]?.[dish.id] || 0) : 0;
+  return `
+    <div class="dish-card" id="dish-${dish.id}">
+      <div class="dish-img">${dish.emoji}</div>
+      <div class="dish-info">
+        <div class="dish-name">${dish.star ? '<span class="star">★</span>' : ''}${dish.name}${dish.suffix || ''}</div>
+        ${dish.recommend ? `<div class="dish-recommend">🔥${dish.recommend}人推荐</div>` : ''}
+        ${dish.desc ? `<div class="dish-desc">${dish.desc}</div>` : ''}
+        <div class="dish-bottom">
+          <div class="dish-price">¥${dish.price}<span>/${dish.unit}</span></div>
+          <div class="dish-actions">
+            ${qty > 0 ? `<button class="qty-btn minus" onclick="changeQty(${dish.id}, -1)">−</button>` : ''}
+            ${qty > 0 ? `<span class="qty-num">${qty}</span>` : ''}
+            <button class="qty-btn plus" onclick="changeQty(${dish.id}, 1)">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function scrollToCat(cat) {
+  const el = document.getElementById('cat-' + cat);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function changeQty(dishId, delta) {
+  if (!currentUser) return;
+  if (!orders[currentUser.id]) orders[currentUser.id] = {};
+  const current = orders[currentUser.id][dishId] || 0;
+  const newQty = current + delta;
+  if (newQty <= 0) {
+    delete orders[currentUser.id][dishId];
+  } else {
+    orders[currentUser.id][dishId] = newQty;
+  }
+  // Send to server
+  socket.emit('update-order', {
+    userId: currentUser.id,
+    dishId: dishId,
+    quantity: newQty <= 0 ? 0 : newQty
+  });
+  renderMenu();
+  updateCartBar();
+}
+
+function updateCartBar() {
+  if (!currentUser) return;
+  const userOrder = orders[currentUser.id] || {};
+  const totalQty = Object.values(userOrder).reduce((s, q) => s + q, 0);
+  const totalPrice = Object.entries(userOrder).reduce((s, [id, q]) => {
+    const dish = MENU.find(d => d.id === parseInt(id));
+    return s + (dish ? dish.price * q : 0);
+  }, 0);
+
+  const badge = document.getElementById('cartBadge');
+  badge.textContent = totalQty;
+  badge.style.display = totalQty > 0 ? 'flex' : 'none';
+  document.getElementById('cartTotal').textContent = totalPrice;
+  document.getElementById('submitBtn').disabled = totalQty === 0;
+}
+
+function submitOrder() {
+  if (!currentUser) return;
+  const userOrder = orders[currentUser.id] || {};
+  const totalQty = Object.values(userOrder).reduce((s, q) => s + q, 0);
+  if (totalQty === 0) {
+    showToast('请先选择菜品');
+    return;
+  }
+  showToast(`${currentUser.name} 的订单已提交！`);
+  showScreen('user');
+}
+
+// ==================== RENDER: Summary ====================
+function renderSummary() {
+  const content = document.getElementById('summaryContent');
+
+  const allDishes = {};
+  USERS.forEach(u => {
+    const userOrder = orders[u.id] || {};
+    Object.entries(userOrder).forEach(([id, qty]) => {
+      if (!allDishes[id]) allDishes[id] = 0;
+      allDishes[id] += qty;
+    });
+  });
+
+  const hasAnyOrder = Object.keys(allDishes).length > 0;
+
+  if (!hasAnyOrder) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🍽️</div>
+        <p>还没有人点菜，快去点菜吧！</p>
+      </div>
+    `;
+    return;
+  }
+
+  let personHTML = '';
+  USERS.forEach(u => {
+    const userOrder = orders[u.id] || {};
+    const entries = Object.entries(userOrder);
+    if (entries.length === 0) return;
+    const total = entries.reduce((s, [id, q]) => {
+      const dish = MENU.find(d => d.id === parseInt(id));
+      return s + (dish ? dish.price * q : 0);
+    }, 0);
+    personHTML += `
+      <div class="summary-section">
+        <div class="person-header">
+          <div class="avatar-sm" style="background:${u.color}">${u.name[0]}</div>
+          ${u.name}
+          <span style="margin-left:auto;font-size:14px;color:#E65100;font-weight:600">¥${total}</span>
+        </div>
+        ${entries.map(([id, qty]) => {
+          const dish = MENU.find(d => d.id === parseInt(id));
+          if (!dish) return '';
+          return `<div class="person-dish">
+            <span class="pd-name">${dish.emoji} ${dish.name}</span>
+            <span class="pd-qty">×${qty}</span>
+            <span style="color:#999;font-size:13px">¥${dish.price * qty}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+  });
+
+  let dishSummaryHTML = '';
+  const sortedDishes = Object.entries(allDishes).sort((a, b) => b[1] - a[1]);
+  let grandTotal = 0;
+
+  sortedDishes.forEach(([id, totalQty]) => {
+    const dish = MENU.find(d => d.id === parseInt(id));
+    if (!dish) return;
+    const finalQty = finalMenu[id] !== undefined ? finalMenu[id] : totalQty;
+    const lineTotal = dish.price * finalQty;
+    grandTotal += lineTotal;
+
+    const orderers = [];
+    USERS.forEach(u => {
+      const q = orders[u.id]?.[parseInt(id)] || 0;
+      if (q > 0) orderers.push(`${u.name}×${q}`);
+    });
+
+    dishSummaryHTML += `
+      <div class="summary-row">
+        <span class="dish-name-sm">${dish.emoji} ${dish.name}</span>
+        <span style="font-size:12px;color:#999;margin-right:8px">${orderers.join('，')}</span>
+        <div class="adjust-btns">
+          <button class="adj-btn" onclick="adjustFinal(${id}, -1)">−</button>
+          <span class="adj-num">${finalQty}</span>
+          <button class="adj-btn" onclick="adjustFinal(${id}, 1)">+</button>
+        </div>
+        <span class="dish-price-sm">¥${lineTotal}</span>
+      </div>
+    `;
+  });
+
+  content.innerHTML = `
+    <div class="summary-tabs">
+      <div class="summary-tab active" onclick="switchSummaryTab(this, 'person')">按人查看</div>
+      <div class="summary-tab" onclick="switchSummaryTab(this, 'dish')">按菜汇总</div>
+      <div class="summary-tab" onclick="switchSummaryTab(this, 'final')">最终菜单</div>
+    </div>
+    <div id="tab-person">${personHTML}</div>
+    <div id="tab-dish" style="display:none">
+      <div class="summary-section">
+        <h3>📊 菜品汇总（被点次数）</h3>
+        ${sortedDishes.map(([id, totalQty]) => {
+          const dish = MENU.find(d => d.id === parseInt(id));
+          if (!dish) return '';
+          return `<div class="summary-row">
+            <span class="dish-name-sm">${dish.emoji} ${dish.name}</span>
+            <span class="dish-qty">${totalQty}份</span>
+            <span class="dish-price-sm">¥${dish.price * totalQty}</span>
+          </div>`;
+        }).join('')}
+        <div class="total-bar">
+          <span>合计</span>
+          <span class="total-price">¥${sortedDishes.reduce((s, [id, q]) => {
+            const d = MENU.find(x => x.id === parseInt(id));
+            return s + (d ? d.price * q : 0);
+          }, 0)}</span>
+        </div>
+      </div>
+    </div>
+    <div id="tab-final" style="display:none">
+      <div class="summary-section">
+        <h3>📋 最终菜单（可调整份数）</h3>
+        <p style="font-size:12px;color:#999;margin-bottom:12px">根据汇总情况调整每道菜的最终份数</p>
+        ${dishSummaryHTML}
+        <div class="total-bar">
+          <span>最终合计</span>
+          <span class="total-price">¥${grandTotal}</span>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:20px">
+        <button class="cart-btn" onclick="exportFinalMenu()" style="padding:14px 40px;font-size:17px">📋 导出最终菜单</button>
+      </div>
+    </div>
+  `;
+}
+
+function switchSummaryTab(el, tab) {
+  el.parentElement.querySelectorAll('.summary-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['person', 'dish', 'final'].forEach(t => {
+    const panel = document.getElementById('tab-' + t);
+    if (panel) panel.style.display = t === tab ? 'block' : 'none';
+  });
+}
+
+function adjustFinal(dishId, delta) {
+  const current = finalMenu[dishId] !== undefined ? finalMenu[dishId] :
+    (Object.values(orders).reduce((s, o) => s + (o[dishId] || 0), 0));
+  const newQty = Math.max(0, current + delta);
+  if (newQty === 0) {
+    delete finalMenu[dishId];
+  } else {
+    finalMenu[dishId] = newQty;
+  }
+  // Send to server
+  socket.emit('update-final-menu', {
+    dishId: dishId,
+    quantity: newQty
+  });
+  renderSummary();
+  setTimeout(() => {
+    const tabs = document.querySelectorAll('.summary-tab');
+    if (tabs[2]) switchSummaryTab(tabs[2], 'final');
+  }, 0);
+}
+
+function exportFinalMenu() {
+  const allDishes = {};
+  USERS.forEach(u => {
+    Object.entries(orders[u.id] || {}).forEach(([id, qty]) => {
+      if (!allDishes[id]) allDishes[id] = 0;
+      allDishes[id] += qty;
+    });
+  });
+
+  let text = '🍲 马厂老火锅（真如店）最终菜单\n';
+  text += '━━━━━━━━━━━━━━━━━━\n\n';
+
+  let grandTotal = 0;
+  const sortedDishes = Object.entries(allDishes).sort((a, b) => b[1] - a[1]);
+
+  sortedDishes.forEach(([id, totalQty]) => {
+    const dish = MENU.find(d => d.id === parseInt(id));
+    if (!dish) return;
+    const finalQty = finalMenu[id] !== undefined ? finalMenu[id] : totalQty;
+    if (finalQty <= 0) return;
+    const lineTotal = dish.price * finalQty;
+    grandTotal += lineTotal;
+
+    const orderers = [];
+    USERS.forEach(u => {
+      const q = orders[u.id]?.[parseInt(id)] || 0;
+      if (q > 0) orderers.push(`${u.name}×${q}`);
+    });
+
+    text += `${dish.name} × ${finalQty}份 = ¥${lineTotal}\n`;
+    text += `  （${orderers.join('，')}）\n\n`;
+  });
+
+  text += '━━━━━━━━━━━━━━━━━━\n';
+  text += `总计：¥${grandTotal}\n`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('最终菜单已复制到剪贴板！');
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('最终菜单已复制到剪贴板！');
+  });
+}
+
+// ==================== NAVIGATION ====================
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+
+  if (name === 'user') {
+    renderUserGrid();
+  } else if (name === 'summary') {
+    previousScreen = currentUser ? 'menu' : 'user';
+    renderSummary();
+  }
+
+  window.scrollTo(0, 0);
+}
+
+function goBackFromSummary() {
+  if (currentUser) showScreen('menu');
+  else showScreen('user');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 1800);
+}
+
+// ==================== INIT ====================
+document.getElementById('roomInfo').innerHTML = `房间: ${ROOM_ID.slice(0, 8)}`;
+
+// Hide loading after 5 seconds fallback
+setTimeout(() => {
+  document.getElementById('loadingOverlay').style.display = 'none';
+}, 5000);
+
+renderUserGrid();
+</script>
+</body>
+</html>
