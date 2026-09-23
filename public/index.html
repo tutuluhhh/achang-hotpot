@@ -342,6 +342,11 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .cart-info:active {
+    opacity: 0.7;
   }
   .cart-icon {
     font-size: 28px;
@@ -653,7 +658,7 @@
     <div class="menu-content" id="menuContent"></div>
   </div>
   <div class="cart-bar" id="cartBar">
-    <div class="cart-info">
+    <div class="cart-info" onclick="showCartPopup()">
       <div class="cart-icon">
         🛒
         <div class="cart-badge" id="cartBadge" style="display:none">0</div>
@@ -666,6 +671,17 @@
     </div>
   </div>
   <button class="switch-user-btn" onclick="showScreen('user')">切换用户</button>
+</div>
+
+<!-- Cart Popup Overlay -->
+<div id="cartPopup" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:200;justify-content:center;align-items:flex-end" onclick="closeCartPopup(event)">
+  <div style="background:white;border-radius:20px 20px 0 0;padding:20px;max-height:70vh;overflow-y:auto;width:100%;max-width:500px" onclick="event.stopPropagation()">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="width:40px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 12px"></div>
+      <h3 style="font-size:17px;color:#333" id="cartPopupTitle">我的订单</h3>
+    </div>
+    <div id="cartPopupContent"></div>
+  </div>
 </div>
 
 <!-- ========== Screen 3: Summary ========== -->
@@ -1056,6 +1072,58 @@ function submitOrder() {
   showScreen('user');
 }
 
+// ==================== CART POPUP ====================
+function showCartPopup() {
+  if (!currentUser) return;
+  const userOrder = orders[currentUser.id] || {};
+  const entries = Object.entries(userOrder);
+  if (entries.length === 0) {
+    showToast('还没点菜呢，快去选吧');
+    return;
+  }
+
+  document.getElementById('cartPopupTitle').textContent = `${currentUser.name} 的订单`;
+
+  // Group by category
+  const byCategory = {};
+  let total = 0;
+  entries.forEach(([id, qty]) => {
+    const dish = MENU.find(d => d.id === parseInt(id));
+    if (!dish) return;
+    if (!byCategory[dish.cat]) byCategory[dish.cat] = [];
+    byCategory[dish.cat].push({ dish, qty });
+    total += dish.price * qty;
+  });
+
+  let html = '';
+  CATEGORIES.forEach(cat => {
+    if (!byCategory[cat]) return;
+    html += `<div style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;color:#FFB300;margin-bottom:6px">${cat}</div>`;
+    byCategory[cat].forEach(({ dish, qty }) => {
+      html += `<div style="display:flex;align-items:center;padding:6px 0;font-size:14px">
+        <span style="flex:1">${dish.emoji} ${dish.name}</span>
+        <span style="color:#E65100;font-weight:600;margin:0 10px">×${qty}</span>
+        <span style="color:#999;font-size:13px;min-width:50px;text-align:right">¥${dish.price * qty}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  html += `<div style="border-top:2px solid #FFB300;padding-top:10px;margin-top:8px;display:flex;justify-content:space-between;font-size:16px;font-weight:700">
+    <span>合计</span><span style="color:#E65100">¥${total}</span>
+  </div>`;
+
+  document.getElementById('cartPopupContent').innerHTML = html;
+  const popup = document.getElementById('cartPopup');
+  popup.style.display = 'flex';
+}
+
+function closeCartPopup(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('cartPopup').style.display = 'none';
+}
+
 // ==================== RENDER: Summary ====================
 function renderSummary() {
   const content = document.getElementById('summaryContent');
@@ -1110,25 +1178,74 @@ function renderSummary() {
     `;
   });
 
-  let dishSummaryHTML = '';
+  // Group dishes by category for summary
+  const dishesByCategory = {};
   const sortedDishes = Object.entries(allDishes).sort((a, b) => b[1] - a[1]);
   let grandTotal = 0;
+  let dishTotalAll = 0;
 
   sortedDishes.forEach(([id, totalQty]) => {
     const dish = MENU.find(d => d.id === parseInt(id));
     if (!dish) return;
+    if (!dishesByCategory[dish.cat]) dishesByCategory[dish.cat] = [];
+    dishesByCategory[dish.cat].push({ id, totalQty });
     const finalQty = finalMenu[id] !== undefined ? finalMenu[id] : totalQty;
-    const lineTotal = dish.price * finalQty;
-    grandTotal += lineTotal;
+    grandTotal += dish.price * finalQty;
+    dishTotalAll += dish.price * totalQty;
+  });
 
-    const orderers = [];
-    USERS.forEach(u => {
-      const q = orders[u.id]?.[parseInt(id)] || 0;
-      if (q > 0) orderers.push(`${u.name}×${q}`);
+  // Helper: render category group header
+  function catHeader(cat, count, total) {
+    return `<div style="font-size:13px;font-weight:600;color:#FFB300;padding:10px 0 6px;border-bottom:1px solid #f0f0f0;margin-bottom:4px;display:flex;justify-content:space-between">
+      <span>${cat}（${count}种）</span><span style="color:#999;font-size:12px">¥${total}</span>
+    </div>`;
+  }
+
+  // Build "按菜汇总" HTML grouped by category
+  let dishSummaryHTML = '';
+  CATEGORIES.forEach(cat => {
+    const items = dishesByCategory[cat];
+    if (!items || items.length === 0) return;
+    const catTotal = items.reduce((s, { id, totalQty }) => {
+      const d = MENU.find(x => x.id === parseInt(id));
+      return s + (d ? d.price * totalQty : 0);
+    }, 0);
+    dishSummaryHTML += catHeader(cat, items.length, catTotal);
+    items.forEach(({ id, totalQty }) => {
+      const dish = MENU.find(d => d.id === parseInt(id));
+      if (!dish) return;
+      dishSummaryHTML += `<div class="summary-row">
+        <span class="dish-name-sm">${dish.emoji} ${dish.name}</span>
+        <span class="dish-qty">${totalQty}份</span>
+        <span class="dish-price-sm">¥${dish.price * totalQty}</span>
+      </div>`;
     });
+  });
 
-    dishSummaryHTML += `
-      <div class="summary-row">
+  // Build "最终菜单" HTML grouped by category
+  let finalMenuHTML = '';
+  CATEGORIES.forEach(cat => {
+    const items = dishesByCategory[cat];
+    if (!items || items.length === 0) return;
+    const catTotal = items.reduce((s, { id, totalQty }) => {
+      const d = MENU.find(x => x.id === parseInt(id));
+      const fq = finalMenu[id] !== undefined ? finalMenu[id] : totalQty;
+      return s + (d ? d.price * fq : 0);
+    }, 0);
+    finalMenuHTML += catHeader(cat, items.length, catTotal);
+    items.forEach(({ id, totalQty }) => {
+      const dish = MENU.find(d => d.id === parseInt(id));
+      if (!dish) return;
+      const finalQty = finalMenu[id] !== undefined ? finalMenu[id] : totalQty;
+      const lineTotal = dish.price * finalQty;
+
+      const orderers = [];
+      USERS.forEach(u => {
+        const q = orders[u.id]?.[parseInt(id)] || 0;
+        if (q > 0) orderers.push(`${u.name}×${q}`);
+      });
+
+      finalMenuHTML += `<div class="summary-row">
         <span class="dish-name-sm">${dish.emoji} ${dish.name}</span>
         <span style="font-size:12px;color:#999;margin-right:8px">${orderers.join('，')}</span>
         <div class="adjust-btns">
@@ -1137,8 +1254,8 @@ function renderSummary() {
           <button class="adj-btn" onclick="adjustFinal(${id}, 1)">+</button>
         </div>
         <span class="dish-price-sm">¥${lineTotal}</span>
-      </div>
-    `;
+      </div>`;
+    });
   });
 
   content.innerHTML = `
@@ -1150,30 +1267,20 @@ function renderSummary() {
     <div id="tab-person">${personHTML}</div>
     <div id="tab-dish" style="display:none">
       <div class="summary-section">
-        <h3>📊 菜品汇总（被点次数）</h3>
-        ${sortedDishes.map(([id, totalQty]) => {
-          const dish = MENU.find(d => d.id === parseInt(id));
-          if (!dish) return '';
-          return `<div class="summary-row">
-            <span class="dish-name-sm">${dish.emoji} ${dish.name}</span>
-            <span class="dish-qty">${totalQty}份</span>
-            <span class="dish-price-sm">¥${dish.price * totalQty}</span>
-          </div>`;
-        }).join('')}
+        <h3>📊 菜品汇总（按品类分组）</h3>
+        <p style="font-size:12px;color:#999;margin-bottom:8px">查看各品类分布，合理搭配荤素</p>
+        ${dishSummaryHTML}
         <div class="total-bar">
           <span>合计</span>
-          <span class="total-price">¥${sortedDishes.reduce((s, [id, q]) => {
-            const d = MENU.find(x => x.id === parseInt(id));
-            return s + (d ? d.price * q : 0);
-          }, 0)}</span>
+          <span class="total-price">¥${dishTotalAll}</span>
         </div>
       </div>
     </div>
     <div id="tab-final" style="display:none">
       <div class="summary-section">
-        <h3>📋 最终菜单（可调整份数）</h3>
-        <p style="font-size:12px;color:#999;margin-bottom:12px">根据汇总情况调整每道菜的最终份数</p>
-        ${dishSummaryHTML}
+        <h3>📋 最终菜单（按品类分组，可调整份数）</h3>
+        <p style="font-size:12px;color:#999;margin-bottom:8px">根据汇总情况调整每道菜的最终份数</p>
+        ${finalMenuHTML}
         <div class="total-bar">
           <span>最终合计</span>
           <span class="total-price">¥${grandTotal}</span>
