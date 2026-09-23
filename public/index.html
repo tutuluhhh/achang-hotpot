@@ -937,6 +937,7 @@ const MENU = [
 let currentUser = null;
 let orders = {}; // { userId: { dishId: qty } }
 let finalMenu = {}; // { dishId: qty }
+let currentSummaryTab = 'person'; // track active summary tab across re-renders
 
 // Initialize orders
 USERS.forEach(u => { orders[u.id] = {}; });
@@ -1298,12 +1299,12 @@ function renderSummary() {
 
   content.innerHTML = `
     <div class="summary-tabs">
-      <div class="summary-tab active" onclick="switchSummaryTab(this, 'person')">按人查看</div>
-      <div class="summary-tab" onclick="switchSummaryTab(this, 'dish')">按菜汇总</div>
-      <div class="summary-tab" onclick="switchSummaryTab(this, 'final')">最终菜单</div>
+      <div class="summary-tab${currentSummaryTab === 'person' ? ' active' : ''}" onclick="switchSummaryTab(this, 'person')">按人查看</div>
+      <div class="summary-tab${currentSummaryTab === 'dish' ? ' active' : ''}" onclick="switchSummaryTab(this, 'dish')">按菜汇总</div>
+      <div class="summary-tab${currentSummaryTab === 'final' ? ' active' : ''}" onclick="switchSummaryTab(this, 'final')">最终菜单</div>
     </div>
-    <div id="tab-person">${personHTML}</div>
-    <div id="tab-dish" style="display:none">
+    <div id="tab-person" style="display:${currentSummaryTab === 'person' ? 'block' : 'none'}">${personHTML}</div>
+    <div id="tab-dish" style="display:${currentSummaryTab === 'dish' ? 'block' : 'none'}">
       <div class="summary-section">
         <h3>📊 菜品汇总（按品类分组）</h3>
         <p style="font-size:12px;color:#999;margin-bottom:8px">查看各品类分布，合理搭配荤素</p>
@@ -1314,7 +1315,7 @@ function renderSummary() {
         </div>
       </div>
     </div>
-    <div id="tab-final" style="display:none">
+    <div id="tab-final" style="display:${currentSummaryTab === 'final' ? 'block' : 'none'}">
       <div class="summary-section">
         <h3>📋 最终菜单（按品类分组，可调整份数）</h3>
         <p style="font-size:12px;color:#999;margin-bottom:8px">根据汇总情况调整每道菜的最终份数</p>
@@ -1332,6 +1333,7 @@ function renderSummary() {
 }
 
 function switchSummaryTab(el, tab) {
+  currentSummaryTab = tab;
   el.parentElement.querySelectorAll('.summary-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   ['person', 'dish', 'final'].forEach(t => {
@@ -1354,16 +1356,8 @@ function adjustFinal(dishId, delta) {
     dishId: dishId,
     quantity: newQty
   });
-  // Remember which tab is active before re-render
-  const activeTabEl = document.querySelector('.summary-tab.active');
-  const activeTabName = activeTabEl ? activeTabEl.textContent.trim() : '最终菜单';
+  // Re-render (currentSummaryTab ensures correct tab stays active)
   renderSummary();
-  // Restore the active tab immediately (no setTimeout to avoid visual jump)
-  const tabMap = { '按人查看': 'person', '按菜汇总': 'dish', '最终菜单': 'final' };
-  const tabName = tabMap[activeTabName] || 'final';
-  const tabs = document.querySelectorAll('.summary-tab');
-  const tabIdx = ['person', 'dish', 'final'].indexOf(tabName);
-  if (tabIdx >= 0 && tabs[tabIdx]) switchSummaryTab(tabs[tabIdx], tabName);
 }
 
 function exportFinalMenu() {
@@ -1423,6 +1417,7 @@ function showScreen(name) {
   if (name === 'user') {
     renderUserGrid();
   } else if (name === 'summary') {
+    currentSummaryTab = 'person';
     renderSummary();
   }
 
