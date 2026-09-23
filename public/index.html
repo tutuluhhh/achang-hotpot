@@ -777,6 +777,9 @@ socket.on('orders-updated', (data) => {
     orders[data.userId] = data.orders || {};
   }
   saveToLocalStorage();
+  // Refresh cart popup if it's currently open
+  const popup = document.getElementById('cartPopup');
+  if (popup && popup.style.display === 'flex') showCartPopup();
   refreshCurrentScreen();
 });
 
@@ -934,7 +937,6 @@ const MENU = [
 let currentUser = null;
 let orders = {}; // { userId: { dishId: qty } }
 let finalMenu = {}; // { dishId: qty }
-let previousScreen = 'menu';
 
 // Initialize orders
 USERS.forEach(u => { orders[u.id] = {}; });
@@ -1352,11 +1354,16 @@ function adjustFinal(dishId, delta) {
     dishId: dishId,
     quantity: newQty
   });
+  // Remember which tab is active before re-render
+  const activeTabEl = document.querySelector('.summary-tab.active');
+  const activeTabName = activeTabEl ? activeTabEl.textContent.trim() : '最终菜单';
   renderSummary();
-  setTimeout(() => {
-    const tabs = document.querySelectorAll('.summary-tab');
-    if (tabs[2]) switchSummaryTab(tabs[2], 'final');
-  }, 0);
+  // Restore the active tab immediately (no setTimeout to avoid visual jump)
+  const tabMap = { '按人查看': 'person', '按菜汇总': 'dish', '最终菜单': 'final' };
+  const tabName = tabMap[activeTabName] || 'final';
+  const tabs = document.querySelectorAll('.summary-tab');
+  const tabIdx = ['person', 'dish', 'final'].indexOf(tabName);
+  if (tabIdx >= 0 && tabs[tabIdx]) switchSummaryTab(tabs[tabIdx], tabName);
 }
 
 function exportFinalMenu() {
@@ -1416,7 +1423,6 @@ function showScreen(name) {
   if (name === 'user') {
     renderUserGrid();
   } else if (name === 'summary') {
-    previousScreen = currentUser ? 'menu' : 'user';
     renderSummary();
   }
 
