@@ -1103,8 +1103,12 @@ function showCartPopup() {
     byCategory[cat].forEach(({ dish, qty }) => {
       html += `<div style="display:flex;align-items:center;padding:6px 0;font-size:14px">
         <span style="flex:1">${dish.emoji} ${dish.name}</span>
-        <span style="color:#E65100;font-weight:600;margin:0 10px">×${qty}</span>
-        <span style="color:#999;font-size:13px;min-width:50px;text-align:right">¥${dish.price * qty}</span>
+        <div style="display:flex;align-items:center;gap:6px;margin:0 8px">
+          <button onclick="changeCartQuantity(${dish.id}, ${qty}, -1)" style="width:28px;height:28px;border-radius:50%;border:1.5px solid #ddd;background:#fff;font-size:16px;font-weight:700;color:#666;display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1">−</button>
+          <span style="font-weight:600;min-width:20px;text-align:center;color:#333">${qty}</span>
+          <button onclick="changeCartQuantity(${dish.id}, ${qty}, 1)" style="width:28px;height:28px;border-radius:50%;border:none;background:#FFB300;font-size:16px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1">+</button>
+        </div>
+        <span style="color:#E65100;font-weight:600;min-width:50px;text-align:right">¥${dish.price * qty}</span>
       </div>`;
     });
     html += `</div>`;
@@ -1117,6 +1121,38 @@ function showCartPopup() {
   document.getElementById('cartPopupContent').innerHTML = html;
   const popup = document.getElementById('cartPopup');
   popup.style.display = 'flex';
+}
+
+function changeCartQuantity(dishId, currentQty, delta) {
+  if (!currentUser) return;
+  const newQty = currentQty + delta;
+
+  if (newQty <= 0) {
+    // Show confirmation dialog before deleting
+    const dish = MENU.find(d => d.id === dishId);
+    const dishName = dish ? `${dish.emoji} ${dish.name}` : '该菜品';
+    if (confirm(`确定要删除「${dishName}」吗？`)) {
+      delete orders[currentUser.id][dishId];
+      socket.emit('update-order', {
+        userId: currentUser.id,
+        dishId: dishId,
+        quantity: 0
+      });
+      showCartPopup(); // Refresh the popup
+    }
+  } else {
+    orders[currentUser.id][dishId] = newQty;
+    socket.emit('update-order', {
+      userId: currentUser.id,
+      dishId: dishId,
+      quantity: newQty
+    });
+    showCartPopup(); // Refresh the popup
+  }
+  updateCartBar();
+  // Also refresh the menu screen if visible
+  const activeScreen = document.querySelector('.screen.active');
+  if (activeScreen && activeScreen.id === 'screen-menu') renderMenu();
 }
 
 function closeCartPopup(e) {
