@@ -635,7 +635,8 @@
     <h2>选择你的身份</h2>
     <p>选好后开始点菜，所有人的选择会实时同步</p>
     <div class="user-grid" id="userGrid"></div>
-    <button class="summary-entry-btn" onclick="showScreen('summary')">📋 查看汇总</button>
+    <button class="summary-entry-btn" onclick="showScreen('summary')"> 查看汇总</button>
+    <button class="summary-entry-btn" onclick="startNewSession()" style="background:linear-gradient(135deg,#ef5350,#e53935);margin-top:12px;color:white">🔄 开始新点菜</button>
   </div>
 </div>
 
@@ -679,15 +680,48 @@
 
 <script>
 // ==================== SOCKET.IO CONNECTION ====================
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000
+});
+
+// Reconnect to room after reconnection
+socket.on('connect', () => {
+  socket.emit('join-room', ROOM_ID);
+});
+
+socket.on('reconnect', () => {
+  showToast('已重新连接');
+});
+
+socket.on('reconnect_error', () => {
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  document.querySelector('.loading-text').textContent = '连接断开，正在重连...';
+});
+
+socket.on('reconnect_failed', () => {
+  document.querySelector('.loading-text').textContent = '连接失败，请刷新页面';
+});
 
 // ==================== ROOM MANAGEMENT ====================
+// Fixed default room so everyone joins the same room
+const DEFAULT_ROOM = 'machang-hotpot-zhenru';
+
 function getRoomId() {
+  // 1. URL hash takes priority (for sharing specific rooms)
   let roomId = window.location.hash.slice(1);
-  if (!roomId) {
-    roomId = 'room_' + Math.random().toString(36).substr(2, 9);
-    window.location.hash = roomId;
+  if (roomId) {
+    localStorage.setItem('hotpot_room', roomId);
+    return roomId;
   }
+  // 2. Check localStorage for previously joined room
+  roomId = localStorage.getItem('hotpot_room');
+  if (roomId) return roomId;
+  // 3. Use default room
+  roomId = DEFAULT_ROOM;
+  localStorage.setItem('hotpot_room', roomId);
+  window.location.hash = roomId;
   return roomId;
 }
 
@@ -698,8 +732,16 @@ socket.emit('join-room', ROOM_ID);
 
 // Receive room state on join
 socket.on('room-state', (data) => {
-  orders = data.orders || {};
-  finalMenu = data.finalMenu || {};
+  // Merge server data with localStorage backup (server is authoritative)
+  const serverOrders = data.orders || {};
+  const serverFinalMenu = data.finalMenu || {};
+  const localOrders = JSON.parse(localStorage.getItem('hotpot_orders_' + ROOM_ID) || '{}');
+  const localFinalMenu = JSON.parse(localStorage.getItem('hotpot_finalMenu_' + ROOM_ID) || '{}');
+
+  // Use server data if available, otherwise fall back to localStorage
+  orders = Object.keys(serverOrders).length > 0 ? serverOrders : localOrders;
+  finalMenu = Object.keys(serverFinalMenu).length > 0 ? serverFinalMenu : localFinalMenu;
+
   USERS.forEach(u => {
     if (!orders[u.id]) orders[u.id] = {};
   });
@@ -707,19 +749,37 @@ socket.on('room-state', (data) => {
   document.getElementById('loadingOverlay').style.display = 'none';
 });
 
+// Save to localStorage as backup
+function saveToLocalStorage() {
+  localStorage.setItem('hotpot_orders_' + ROOM_ID, JSON.stringify(orders));
+  localStorage.setItem('hotpot_finalMenu_' + ROOM_ID, JSON.stringify(finalMenu));
+}
+
 // Receive real-time order updates
 socket.on('orders-updated', (data) => {
   if (data.userId) {
     orders[data.userId] = data.orders || {};
   }
+  saveToLocalStorage();
   refreshCurrentScreen();
 });
 
 // Receive real-time final menu updates
 socket.on('final-menu-updated', (data) => {
   finalMenu = data.finalMenu || {};
+  saveToLocalStorage();
   const activeScreen = document.querySelector('.screen.active');
   if (activeScreen.id === 'screen-summary') renderSummary();
+});
+
+// Handle clear all
+socket.on('orders-cleared', () => {
+  orders = {};
+  finalMenu = {};
+  USERS.forEach(u => { orders[u.id] = {}; });
+  localStorage.removeItem('hotpot_orders_' + ROOM_ID);
+  localStorage.removeItem('hotpot_finalMenu_' + ROOM_ID);
+  refreshCurrentScreen();
 });
 
 // Online count updates
@@ -1230,6 +1290,21 @@ function showToast(msg) {
   t.textContent = msg;
   t.style.display = 'block';
   setTimeout(() => { t.style.display = 'none'; }, 1800);
+}
+
+function startNewSession() {
+  if (!confirm('确定要清空所有点菜数据，开始新一轮点菜吗？')) return;
+  // Clear server data
+  socket.emit('update-order', { userId: -1, dishId: '__clear__', quantity: 0 });
+  // Clear localStorage
+  localStorage.removeItem('hotpot_orders_' + ROOM_ID);
+  localStorage.removeItem('hotpot_finalMenu_' + ROOM_ID);
+  // Clear local state
+  orders = {};
+  finalMenu = {};
+  USERS.forEach(u => { orders[u.id] = {}; });
+  refreshCurrentScreen();
+  showToast('已清空，可以开始新一轮点菜');
 }
 
 // ==================== INIT ====================

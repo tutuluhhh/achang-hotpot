@@ -62,6 +62,16 @@ io.on('connection', (socket) => {
   socket.on('update-order', (data) => {
     if (!currentRoom || !data.userId) return;
 
+    // Handle clear all command
+    if (data.dishId === '__clear__') {
+      if (rooms[currentRoom]) {
+        rooms[currentRoom].orders = {};
+        rooms[currentRoom].finalMenu = {};
+      }
+      io.to(currentRoom).emit('orders-cleared');
+      return;
+    }
+
     if (!rooms[currentRoom]) {
       rooms[currentRoom] = { orders: {}, finalMenu: {} };
     }
