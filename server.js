@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,8 +10,35 @@ const io = new Server(server, {
   cors: { origin: '*' }
 });
 
-// In-memory storage for all rooms
-const rooms = {};
+// File-based persistence
+const DATA_DIR = path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'rooms.json');
+
+function loadRooms() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load data:', err.message);
+  }
+  return {};
+}
+
+function saveRooms() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(rooms, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save data:', err.message);
+  }
+}
+
+// Persistent storage for all rooms
+const rooms = loadRooms();
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -68,6 +96,7 @@ io.on('connection', (socket) => {
         rooms[currentRoom].orders = {};
         rooms[currentRoom].finalMenu = {};
       }
+      saveRooms();
       io.to(currentRoom).emit('orders-cleared');
       return;
     }
@@ -85,6 +114,8 @@ io.on('connection', (socket) => {
     } else {
       rooms[currentRoom].orders[data.userId][data.dishId] = data.quantity;
     }
+
+    saveRooms();
 
     // Broadcast to all users in the room
     io.to(currentRoom).emit('orders-updated', {
@@ -106,6 +137,8 @@ io.on('connection', (socket) => {
     } else {
       rooms[currentRoom].finalMenu[data.dishId] = data.quantity;
     }
+
+    saveRooms();
 
     // Broadcast to all users in the room
     io.to(currentRoom).emit('final-menu-updated', {
